@@ -1,0 +1,25 @@
+exapunks emulator written in rust
+aim for good performance
+program "compiled" to an IR (exact structure unimportant)
+	marks are omitted (at least from the main code structure)
+	jump/repl are relative
+
+single threaded
+	running exas in seperate threads possible but almost certainly
+	not worth the tradeoffs given they will probably be communicating with
+	each other anyway.
+	multithreading will come in handy later when you want to simulate lots of
+	slightly different solutions at once.
+
+goal 1: single-exa pure compute
+	treat externally-touching instructions as nops or with arbitrary results
+goal 2: add files
+	just a fixed set of existing files, no concept of a host yet
+goal 3: cross-exa comms
+	still all in one infinite host
+	running multiple exas in lock-step is easier, but perf gains may be had
+	if we can run each one in "runs" where its execution is independent of effects on
+	any other exa
+goal 4: world
+	host limits, links, hw regs, etc
+	probably also some way to manage ad hoc world effects for particular puzzles

@@ -1,0 +1,49 @@
+# vim: set ts=16
+COPY R/I R	Copy from $1 to $2
+ADDI R/N R/N R	Add, multiply, divide, subtract or modulo $2 from/by $1, and write to $3
+	For MODI, -x % y is in [0, y), x % -y is in (-y, 0], -x % -y == -(x % y)
+SWIZ R/N R/N R	For each digit i in $2, same digit of result = ith digit of $1, write result to $3
+	Sign of result = multiply sign of inputs (same sign -> positive, diff sign -> negative)
+MARK L	Pseudo-instruction, create label
+JUMP L	Unconditional jump
+TJMP L	Jump if T != 0
+FJMP L	Jump if T == 0
+TEST R/N OP R/N	Set T to 0 or 1 based on $1 OP $2. OP in [=, <, >].
+	Alphabetic for keyword, false for keyword vs number
+TEST MRD	Set T to 0 or 1 based on if EXA could read from M without pausing
+TEST EOF	Set T to 0 or 1 based on if held file is at EOF
+REPL L	Fork EXA and jump to label in child
+HALT	Terminate EXA
+KILL	Terminate other EXA on same host, preferencing ones created by same user
+LINK R/N	Traverse link of given id
+HOST R	Write hostname to given register
+MODE	Toggle M between global and local mode
+VOID M	Read and discard value from M
+MAKE	Create new file (starts held)
+GRAB R/N	Grab file of given id
+FILE R	Write id of held file to given register
+SEEK R/N	Move file cursor given number of records forward/back
+VOID F	Delete record at file cursor
+DROP	Drop held file
+WIPE	Delete held file
+NOTE	Pseudo-instruction, comment
+NOOP	Do nothing
+RAND R/N R/N R	Write random number in [$1, $2] (inclusive) to $3
+
+Redshift reference
+WAIT	New instruction. Pause until next frame.
+DATA {I}	New pseudo-instruction. All DATA instrs are concated and forms the content of initially held file
+GX/GY/GZ	New EXA registers specifying position of top left corner of 10x10 sprite. X=0-120, Y=0-100, Z=-9-9
+GP	New EXA register to edit sprite. Digits oxy: o=0 for off, 1 for on, 2 for toggle, xy are coords.
+	Can also write 3nn to set sprite to font character nn (0=space, then a-z, 0-9, .?!)
+CI/CO	Collision detection. If two EXA's sprites overlap _on_ pixels, each others' CO is set to their CI
+	If multiple collisions, highest CO value wins
+#SQR0/#SQR1	Square wave generator. Write 1-100 to pick note, 0 to stop, middle C = 60, C# = 61, etc.
+#TRI0	As SQR0 but triangle wave generator.
+#NSE0	As SQR0 but white noise generator in range 8-100 to control frequency
+	High freq sounds like white noise, mid-range values have a pitch-like quality.
+	Frequences are discrete and denser in higher ranges.
+#PADX/#PADY	-1, 0 or 1 depending on state of that axis of the d-pad
+#PADB	szyx where each digit is 0 or 1 depending on if respective button is pressed
+	s is for Start and is undocumented
+#EN3D	1 or 0 depending on if 3d mode is on
