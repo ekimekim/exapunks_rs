@@ -16,6 +16,28 @@ enum Value {
 	Symbol(u16),
 }
 
+impl Value {
+	fn operate(&self, op: BinaryOp, operand: Value) -> Result<Value, &'static str> {
+		// check they're both numbers and unwrap them, or fail
+		let left, right = match (self, operand) {
+			(Value::Number(l), Value::Number(r)) => Ok((l, r)),
+			_ => Err("Cannot perform arithmetic on symbols"),
+		}?
+		let mut result = match op {
+			BinaryOp::Add => left + right,
+			BinaryOp::Sub => left - right,
+			// Multiplication can overflow i16, so be explicit about overflow behaviour
+			BinaryOp::Mul => left.saturating_mul(right),
+			BinaryOp::Div => left / right,
+			BinaryOp::Mod => left % right,
+			BinaryOp::Swiz => unimplemented!(),
+		}
+		if result > 9999 { result = 9999 };
+		if result < -9999 { result = -9999 };
+		Ok(Value::Number(Result))
+	}
+}
+
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 enum CommMode {
 	Global,
@@ -153,32 +175,24 @@ impl Exa {
 				instruction
 			}
 		};
-		match instruction {
+
+		let result = match instruction {
 			Instruction::Copy(src, dest) => {
-				if let Ok(value) = self.read_reg_or_value(src) {
-					self.write_reg(dest, value)
-				}
+				self.read_reg_or_value(src)
+					.and_then(|value| self.write_reg(dest, value))
 			},
 			Instruction::BinaryOp(op, left, right, dest) => {
-				let _ = self.read_reg_or_value(left) // attempt to read left operand
+				self.read_reg_or_value(left) // attempt to read left operand
 					.and_then(|left|
 						// if left succeeded, attempt to read right,
 						// and pass both onwards
 						self.read_reg_or_value(right).map(|right| (left, right))
 					).and_then(|(left, right)|
-						// check they're both numbers and unwrap them, or fail
-						match (left, right) {
-							(Value::Number(l), Value::Number(r)) => Ok((l, r)),
-							_ => {
-								self.die("Cannot perform arithmetic on symbols");
-								Err()
-							}
-						}
-					).map(|(left, right)|
-						// Do the actual op
-						match op {
-							BinaryOp::Add => left
-						}
+						// actually do the op, which may fail for non-numbers
+						left.operate(right)
+					).and_then(|result|
+						// finally, attempt to write it
+						self.write_reg(dest, result)
 					)
 			},
 			Instruction::Jump(JumpCondition, i16),
