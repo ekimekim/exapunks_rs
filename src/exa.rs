@@ -30,7 +30,7 @@ impl Value {
 			BinaryOp::Mul => left.saturating_mul(right),
 			BinaryOp::Div => left / right,
 			BinaryOp::Mod => left % right,
-			BinaryOp::Swiz => unimplemented!(),
+			BinaryOp::Swiz => swiz(left, right),
 		}
 		if result > 9999 { result = 9999 };
 		if result < -9999 { result = -9999 };
@@ -260,4 +260,21 @@ impl Exa {
 			RegOrValue::Value(value) => Ok(value),
 		}
 	}
+}
+
+// Implements the SWIZ operation:
+//  For each digit i in right, same digit of result = ith digit of left (count digits LSD to MSD, 1-based).
+//  Sign of result = multiply sign of inputs (same sign -> positive, diff sign -> negative).
+fn swiz(left: i16, right: i16) -> i16 {
+	fn get_digit(value: i16, digit: i16) -> i16 {
+		((value.abs() / 10.pow(digit - 1)) % 10)
+	}
+
+	let mut result: i16 = 0;
+	for right_digit in 1..4 {
+		let left_digit = get_digit(right, right_digit);
+		result += get_digit(left, left_digit) * 10.pow(right_digit - 1)
+	}
+
+	result
 }
