@@ -23,7 +23,7 @@ impl Value {
 			(Value::Number(l), Value::Number(r)) => Ok((l, r)),
 			_ => Err("Cannot perform arithmetic on symbols"),
 		}?
-		let mut result = match op {
+		let result = (match op {
 			BinaryOp::Add => left + right,
 			BinaryOp::Sub => left - right,
 			// Multiplication can overflow i16, so be explicit about overflow behaviour
@@ -31,10 +31,8 @@ impl Value {
 			BinaryOp::Div => left / right,
 			BinaryOp::Mod => left % right,
 			BinaryOp::Swiz => swiz(left, right),
-		}
-		if result > 9999 { result = 9999 };
-		if result < -9999 { result = -9999 };
-		Ok(Value::Number(Result))
+		}).clamp(-9999, 9999);
+		Ok(Value::Number(result))
 	}
 }
 
@@ -163,15 +161,25 @@ impl Exa {
 		let instruction = match self.death_message {
 			// We are dying, which implicitly means it's time to halt
 			Some(_) => Instruction::Halt,
-			// We are at end of code. This is a weird case because normally
-			// we detect this condition the step before and we're already dying by now.
-			// However we can reach this state after a jump or repl to end of code.
-			// Just insert an implicit Noop.
-			None if self.next_code_index >= self.code.len() => Instruction::Noop
-			// Otherwise, fetch instruction and increment code index
 			None => {
-				let instruction = self.code[self.next_code_index];
-				self.next_code_index += 1;
+				let instruction;
+				if self.next_code_index >= self.code.len() {
+					// We are at end of code. This is a weird case because normally
+					// we detect this condition the step before and we're already dying by now.
+					// However we can reach this state after a jump or repl to end of code.
+					// Just insert an implicit Noop. Yes, this means it takes an extra cycle
+					// to die. Yes this is accurate to the game.
+					instruction = Instruction::Noop
+				} else {
+					// Otherwise, fetch instruction and increment code index
+					let instruction = self.code[self.next_code_index];
+					self.next_code_index += 1;
+				}
+				// And start dying if we are now at end of code.
+				// If we jump away on this instruction we'll clear this later.
+				if self.next_code_index >= self.code.len() {
+					self.death_message = Some("End of Instructions");
+				}
 				instruction
 			}
 		};
@@ -195,25 +203,86 @@ impl Exa {
 						self.write_reg(dest, result)
 					)
 			},
-			Instruction::Jump(JumpCondition, i16),
+			Instruction::Jump(condition, target) => {
+				let do_jump = match condition {
+					JumpCondition::None => false,
+					JumpCondition::True => self.reg_t != Value::Number(0),
+					JumpCondition::False => self.reg_t == Value::Number(0),
+				};
+				if do_jump {
+					self.next_code_index = target;
+					// It's possible a death message was set due to end of code.
+					// Since we're jumping away (possibly to end of code anyway, but
+					// the game takes an extra cycle in this case) we need to clear it.
+					self.death_message = None;
+				}
+				Ok(())
+			},
 			Instruction::Test(TestOp, RegOrValue, RegOrValue),
 			Instruction::TestMRD,
-			Instruction::TestEOF,
+			Instruction::TestEOF => {
+				match self.file {
+					None => Err("No held file"),
+					Some(held_file) => {
+						self.reg_t = if held_file.position >= held_file.file.contents.len() {
+							Value::Number(1)
+						} else {
+							Value::Number(0)
+						}
+						Ok(())
+					}
+				}
+			},
 			Instruction::Repl(i16),
 			Instruction::Halt,
 			Instruction::Kill,
 			Instruction::Link(RegOrValue),
 			Instruction::Host(Register),
-			Instruction::Mode,
+			Instruction::Mode => {
+				self.comm_mode = match self.comm_mode {
+					CommMode::Local => CommMode::Global,
+					CommMode::Global => CommMode::Local,
+				};
+				Ok(())
+			},
 			Instruction::VoidM,
 			Instruction::Make,
 			Instruction::Grab(RegOrValue),
-			Instruction::File(Register),
-			Instruction::Seek(RegOrValue),
+			Instruction::File(register) => {
+				match self.file {
+					None => Err("No held file"),
+					Some(held_file) => self.write_reg(register, Number(held_file.file.id as i16)),
+				}
+			},
+			Instruction::Seek(reg_or_value) => {
+				self.read_reg_or_value(reg_or_value).and_then(|value| {
+					match value {
+						Value::Symbol(_) => Err("Cannot seek with symbol"),
+						Value::Number(offset) => match self.file {
+							None => Err("No held file"),
+							Some(held_file) => {
+								held_file.position = (held_file.position + offset).clamp(
+									0, held_file.file.contents.len() // note 1 past end of vec is allowed
+								);
+								Ok(()),
+							}
+						}
+					}
+				})
+			},
 			Instruction::VoidF,
 			Instruction::Drop,
-			Instruction::Wipe,
-			Instruction::Noop => (),
+			Instruction::Wipe => {
+				match self.file {
+					None => Err("No held file"),
+					Some(held_file) => {
+						held_file.file.contents.clear();
+						held_file.position = 0;
+						Ok(());
+					}
+				}
+			},
+			Instruction::Noop => Ok(()),
 		};
 		Ok(self)
 	}
