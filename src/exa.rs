@@ -164,6 +164,25 @@ enum ExaError {
 	FileIsFull,
 }
 
+// Helper trait to define useful methods on Option<HeldFile>
+trait HeldFileHelpers {
+	// Helper function for dealing with operations on held files.
+	// Returns a NoHeldFile error on None, or else calls the provided function
+	// with a mutable reference to the unwrapped HeldFile.
+	fn with<T, F>(&mut self, func: F) -> Result<T, ExaError>
+	where F: FnOnce(&mut HeldFile) -> Result<T, ExaError>;
+}
+
+impl HeldFileHelpers for Option<HeldFile> {
+	fn with<T, F>(&mut self, func: F) -> Result<T, ExaError>
+	where F: FnOnce(&mut HeldFile) -> Result<T, ExaError> {
+		match self {
+			None => Err(ExaError::NoHeldFile),
+			Some(held_file) => func(held_file),
+		}
+	}
+}
+
 #[derive(Debug)]
 struct Exa<'a> {
 	// General purpose registers
@@ -268,8 +287,9 @@ impl<'a> Exa<'a> {
 			Instruction::Test(TestOp, RegOrValue, _RegOrValue) => unimplemented!(),
 			Instruction::TestMRD => unimplemented!(),
 			Instruction::TestEOF => {
-				self.with_file(|held_file| {
-					self.reg_t = if held_file.position as usize >= held_file.file.contents.len() {
+				let reg_t = &mut self.reg_t; // be specific to avoid borrowing self inside closure
+				self.file.with(|held_file| {
+					*reg_t = if held_file.position as usize >= held_file.file.contents.len() {
 						Value::Number(1)
 					} else {
 						Value::Number(0)
@@ -296,7 +316,7 @@ impl<'a> Exa<'a> {
 			Instruction::Make => unimplemented!(),
 			Instruction::Grab(RegOrValue) => unimplemented!(),
 			Instruction::File(register) => {
-				self.with_file(|held_file| self.write_reg(register, Value::Number(held_file.file.id as i16)))
+				self.file.with(|held_file| self.write_reg(register, Value::Number(held_file.file.id as i16)))
 			},
 			Instruction::Seek(reg_or_value) => {
 				// There is an important subtlety here.
@@ -307,7 +327,7 @@ impl<'a> Exa<'a> {
 				self.read_reg_or_value(reg_or_value).and_then(|value| {
 					match value {
 						Value::Symbol(_) => Err(ExaError::NotANumber),
-						Value::Number(offset) => self.with_file(|held_file| {
+						Value::Number(offset) => self.file.with(|held_file| {
 							// We need to hack around rust's strict integer type operations here.
 							// We convert everything to i16 (safe since our values are in [0,1000]
 							// and [-9999, 9999] respectively), do the addition, then clamp back
@@ -321,7 +341,7 @@ impl<'a> Exa<'a> {
 				})
 			},
 			Instruction::VoidF => {
-				self.with_file(|held_file| { held_file.delete() })
+				self.file.with(|held_file| { held_file.delete() })
 			},
 			Instruction::Drop => unimplemented!(),
 			Instruction::Wipe => {
@@ -360,7 +380,7 @@ impl<'a> Exa<'a> {
 		match reg {
 			Register::X => { self.reg_x = value; Ok(()) },
 			Register::T => { self.reg_t = value; Ok(()) },
-			Register::F => self.with_file(|held_file| held_file.write(value)),
+			Register::F => self.file.with(|held_file| held_file.write(value)),
 			Register::M => unimplemented!(),
 		}
 	}
@@ -369,7 +389,7 @@ impl<'a> Exa<'a> {
 		match reg {
 			Register::X => Ok(self.reg_x),
 			Register::T => Ok(self.reg_t),
-			Register::F => self.with_file(|held_file| held_file.read()),
+			Register::F => self.file.with(|held_file| held_file.read()),
 			Register::M => unimplemented!(),
 		}
 	}
@@ -381,14 +401,6 @@ impl<'a> Exa<'a> {
 		}
 	}
 
-	// Call callback with an unwrapped held file, or else error with NoHeldFile
-	fn with_file<T, F>(&mut self, func: F) -> Result<T, ExaError>
-	where F: FnOnce(&mut HeldFile) -> Result<T, ExaError> {
-		match self.file {
-			None => Err(ExaError::NoHeldFile),
-			Some(held_file) => func(&mut held_file),
-		}
-	}
 }
 
 // Implements the SWIZ operation:
