@@ -1,4 +1,4 @@
-
+#![allow(unused_variables, dead_code, non_snake_case)]
 
 // XXX: We could pack this tighter (into 2 bytes) if we wanted,
 // since we don't actually need the full range of either enum's data.
@@ -316,7 +316,8 @@ impl<'a> Exa<'a> {
 			Instruction::Make => unimplemented!(),
 			Instruction::Grab(RegOrValue) => unimplemented!(),
 			Instruction::File(register) => {
-				self.file.with(|held_file| self.write_reg(register, Value::Number(held_file.file.id as i16)))
+				self.file.with(|held_file| Ok(held_file.file.id))
+					.and_then(|id| self.write_reg(register, Value::Number(id as i16)))
 			},
 			Instruction::Seek(reg_or_value) => {
 				// There is an important subtlety here.
